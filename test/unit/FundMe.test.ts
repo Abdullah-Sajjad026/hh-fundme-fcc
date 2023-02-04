@@ -46,5 +46,16 @@ import {developmentNetworks} from "../../helper-hardhat-config";
         });
       });
 
-      //   describe("Withdraw", function () {});
+      describe("Withdraw", function () {
+        beforeEach(async () => {
+          await fundMe.fund({value: sendValue});
+        });
+        // it("Only allows the owner to withdraw", async () => {
+        //   const accounts = await ethers.getSigners();
+        //   const fundMeConnectedContract = fundMe.connect(accounts[1]);
+        //   await expect(fundMeConnectedContract.withdraw()).to.be.revertedWith(
+        //     "FundMe__NotOwner"
+        //   );
+        // });
+      });
     });
