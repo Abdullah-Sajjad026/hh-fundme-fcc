@@ -1,0 +1,41 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(uint80 _roundId)\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n\n  function latestRoundData()\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// SPDX-License-Identifier: MIT\r\n\r\n// 1. Pragma\r\npragma solidity ^0.8.8;\r\n\r\n// 2. Imports\r\n// importing AggregatorV3Interface of ChainLink Data Feeds.\r\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\r\n\r\nimport \"./PriceConverter.sol\";\r\n\r\n// 3. Interfaces, Libraries, Contracts\r\nerror FundMe__NotOwner();\r\n\r\n/**\r\n * @title A sample Funding Contract\r\n * @author Abdullah Sajjad\r\n * @notice This contract is for creating a sample funding contract\r\n * @dev This implements price feeds as our library\r\n */\r\n\r\ncontract FundMe {\r\n    // Type Declarations\r\n    using PriceConverter for uint256;\r\n\r\n    // State Variables\r\n    uint256 public constant MINIMUM_USD = 50 * 10 ** 18;\r\n    address private immutable i_owner;\r\n    AggregatorV3Interface private immutable i_priceFeed;\r\n\r\n    address[] private s_funders;\r\n    mapping(address => uint256) private s_addressToAmountFunded;\r\n\r\n    // Events (we have none!)\r\n\r\n    // Modifiers\r\n    modifier onlyOwner() {\r\n        if (msg.sender != i_owner) revert FundMe__NotOwner();\r\n        _;\r\n    }\r\n\r\n    /* \r\n    Functions Order:\r\n        constructor\r\n        receive\r\n        fallback\r\n        external\r\n        public\r\n        internal\r\n        private\r\n        view / pure\r\n    */\r\n    constructor(address priceFeedAddress) {\r\n        i_owner = msg.sender;\r\n        i_priceFeed = AggregatorV3Interface(priceFeedAddress);\r\n    }\r\n\r\n    receive() external payable {\r\n        fund();\r\n    }\r\n\r\n    fallback() external payable {\r\n        fund();\r\n    }\r\n\r\n    function fund() public payable {\r\n        require(\r\n            msg.value.convertEthToUSD(i_priceFeed) >= MINIMUM_USD,\r\n            \"Didn't send enough!\"\r\n        );\r\n\r\n        s_funders.push(msg.sender);\r\n        s_addressToAmountFunded[msg.sender] += msg.value;\r\n    }\r\n\r\n    function withdraw() public onlyOwner {\r\n        address[] memory funders = s_funders;\r\n        for (uint256 i = 0; i < funders.length; i++) {\r\n            address funder = funders[i];\r\n            s_addressToAmountFunded[funder] = 0;\r\n        }\r\n        // reset array\r\n        s_funders = new address[](0);\r\n\r\n        /*\r\n            Withdraw Funds: \r\n                1. transfer\r\n                2. send\r\n                3. call\r\n            solidity by example\r\n        */\r\n        // transfer\r\n        payable(msg.sender).transfer(address(this).balance); // throws error if failed\r\n\r\n        // send\r\n        bool sendStatus = payable(msg.sender).send(address(this).balance); // returns boolean\r\n        require(sendStatus, \"Send Failed\");\r\n\r\n        // call\r\n        (bool callStatus, ) = payable(msg.sender).call{\r\n            value: address(this).balance\r\n        }(\"\");\r\n        require(callStatus, \"Call Failed\");\r\n    }\r\n\r\n    // Getters\r\n    function getPriceFeed() public view returns (AggregatorV3Interface) {\r\n        return i_priceFeed;\r\n    }\r\n\r\n    function getOwner() public view returns (address) {\r\n        return i_owner;\r\n    }\r\n\r\n    function getFunder(uint256 index) public view returns (address) {\r\n        return s_funders[index];\r\n    }\r\n\r\n    function getAddressToAmountFunded(\r\n        address funder\r\n    ) public view returns (uint256) {\r\n        return s_addressToAmountFunded[funder];\r\n    }\r\n}\r\n"
+    },
+    "contracts/PriceConverter.sol": {
+      "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.8;\r\n\r\n// importing AggregatorV3Interface of ChainLink Data Feeds.\r\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\r\n\r\nlibrary PriceConverter {\r\n    function getEthPriceInUSD(\r\n        AggregatorV3Interface priceFeed\r\n    ) internal view returns (uint256) {\r\n        /* since we are interacting with a smart contract outside of ours,\r\n        we need its ABI and Adderss. */\r\n\r\n        /* \r\n            Network: Eth Goerli Testnet\r\n            Aggregator: ETH/USD\r\n            Address: 0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e\r\n        */\r\n\r\n        (, int256 answer, , , ) = priceFeed.latestRoundData();\r\n        return uint256(answer * 10000000000);\r\n    }\r\n\r\n    function convertEthToUSD(\r\n        uint256 ethAmount,\r\n        AggregatorV3Interface priceFeed\r\n    ) internal view returns (uint256) {\r\n        uint256 ethPriceInUSD = getEthPriceInUSD(priceFeed);\r\n        uint256 calculatedUSD = (ethAmount * ethPriceInUSD) /\r\n            1000000000000000000;\r\n        return calculatedUSD;\r\n    }\r\n}\r\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
